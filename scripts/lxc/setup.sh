@@ -402,6 +402,45 @@ install -m 644 "$unit_src" "/etc/systemd/system/$UNIT.service"
   say "ExecStart=$CODE/bin/conclave serve"
 } >"/etc/systemd/system/$UNIT.service.d/10-setup.conf"
 
+# Updates from the app (docs/DESIGN.md, Updates). The hub cannot change
+# /opt/conclave or restart its own system service. When the owner presses
+# Update now, it checks the release and writes $DATA/updates/request.json;
+# this path unit sees it and starts conclave-update.service as root, which
+# checks the signature again with the key built into the installed conclave,
+# swaps the release folder (keeping the old one as release.prev), restarts
+# the hub and puts the old one back when the new one does not answer.
+# A source install updates by running this script again, so it gets none.
+if [ "$mode" = release ]; then
+  mkdir -p "$DATA/updates"
+  chown conclave:conclave "$DATA/updates"
+  {
+    say "# Written by setup.sh: starts the Conclave updater when the hub asks for an update."
+    say "[Unit]"
+    say "Description=Conclave update requests"
+    say ""
+    say "[Path]"
+    say "PathExists=$DATA/updates/request.json"
+    say "Unit=conclave-update.service"
+    say ""
+    say "[Install]"
+    say "WantedBy=multi-user.target"
+  } >/etc/systemd/system/conclave-update.path
+  {
+    say "# Written by setup.sh: checks a release the hub downloaded, swaps it in, restarts the hub."
+    say "[Unit]"
+    say "Description=Conclave updater"
+    say ""
+    say "[Service]"
+    say "Type=oneshot"
+    say "Environment=CONCLAVE_HOME=$DATA"
+    say "ExecStart=$CODE/bin/conclave update finish"
+    say "TimeoutStartSec=900"
+  } >/etc/systemd/system/conclave-update.service
+else
+  if [ "$systemd" = 1 ]; then systemctl disable --now conclave-update.path >/dev/null 2>&1 || true; fi
+  rm -f /etc/systemd/system/conclave-update.path /etc/systemd/system/conclave-update.service
+fi
+
 {
   say "# Choices of the last setup.sh run. It reads them when it runs again."
   say "saved_from=$(q "$FROM")"
@@ -418,6 +457,7 @@ if [ "$systemd" = 1 ]; then
   systemctl daemon-reload
   systemctl enable -q "$UNIT"
   systemctl add-wants multi-user.target "$UNIT.service" >/dev/null 2>&1 || true
+  if [ "$mode" = release ]; then systemctl enable -q --now conclave-update.path; fi
   systemctl restart "$UNIT"
   tries=0
   until curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; do
@@ -456,4 +496,8 @@ say "  conclave pair-phone         a pairing code and QR code for the apps"
 say "  conclave password set       optional: a hub password, to log in without a code"
 say "  conclave secret anthropic   optional: a provider key, or add one in the web app"
 say "  conclave doctor             checks the install"
-say "To update, run this script again. It keeps the choices above."
+if [ "$mode" = release ]; then
+  say "To update: Settings, About in the web app, or run this script again. It keeps the choices above."
+else
+  say "To update, run this script again. It keeps the choices above."
+fi
