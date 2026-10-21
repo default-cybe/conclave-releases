@@ -17,6 +17,11 @@ services:
       - conclave-data:/data
     environment:
       TZ: ${TZ:-UTC}
+    # stdout stays small; the hub's own log files in /data/logs are the record (docs/INSTALL.md, section 12)
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Provider keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...) can go in a .env
     # file next to this one, or in the web UI later.
     env_file:
