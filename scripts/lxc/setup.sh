@@ -6,8 +6,9 @@
 # For Debian 12 or 13 and Ubuntu 24.04: a Proxmox CT, Incus, LXD, plain LXC or
 # a VM. It installs the packages the hub needs, Bun, a conclave user, Conclave
 # itself (a GitHub release when there is one, else the source) and a systemd
-# unit, then starts the hub. Run it again to update in place. sh setup.sh --help
-# lists the options.
+# unit, then starts the hub. It offers the root helper, so the hub can add the
+# system packages it needs by itself, and the browser's libraries. Run it again
+# to update in place. sh setup.sh --help lists the options.
 set -eu
 
 # Keep in step with the Dockerfile and the workflows.
@@ -44,6 +45,15 @@ Options (each can also be set as the environment variable after it):
                            (default: 1000, when free).
   --projects DIR           CONCLAVE_PROJECTS. Projects folder
                            (default: /home/conclave/projects).
+  --root-helper, --no-root-helper
+                           CONCLAVE_ROOT_HELPER=1 or 0. Install the root helper
+                           (conclave system-helper install), so the hub can add
+                           the system packages it needs by itself, such as the
+                           browser's libraries. Default: ask, yes.
+  --browser-libs, --no-browser-libs
+                           CONCLAVE_BROWSER_LIBS=1 or 0. Install the browser's
+                           system libraries and fonts now, about 150 MB.
+                           Default: ask, no. The hub can do it later.
   --no-systemd             Install the unit but do not enable or start it.
                            Only for tests in a container without systemd.
   -h, --help               Show this.
@@ -53,6 +63,8 @@ Where things go:
   /var/lib/conclave        hub data: config, secrets, database (CONCLAVE_HOME)
   /home/conclave           the conclave user's home: harness logins, git config
   /etc/conclave/env        environment for the hub, KEY=value lines
+  /usr/local/libexec/conclave-root-helper, /etc/sudoers.d/conclave
+                           the root helper, when it is installed
 EOF
 }
 
@@ -67,9 +79,24 @@ need() { [ "$1" -gt 0 ] || die "$2 needs a value. See --help."; }
 fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
 # Quote a value for the settings file, which this script reads back with "."
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+# A yes or no question on the terminal; $2 (y or n) is the answer when there
+# is no terminal or the answer is empty.
+ask() {
+  if [ -t 0 ] && [ -t 1 ]; then
+    if [ "$2" = y ]; then printf '%s [Y/n] ' "$1"; else printf '%s [y/N] ' "$1"; fi
+    answer=''
+    read -r answer || true
+    case $answer in
+      [Yy]*) return 0 ;;
+      [Nn]*) return 1 ;;
+    esac
+  fi
+  [ "$2" = y ]
+}
 
 opt_from='' opt_version='' opt_repo='' opt_repo_url='' opt_ref=''
 opt_source_dir='' opt_port='' opt_uid='' opt_projects=''
+opt_root_helper='' opt_browser_libs=''
 systemd=1
 while [ $# -gt 0 ]; do
   arg=$1
@@ -90,6 +117,10 @@ while [ $# -gt 0 ]; do
     --port) need $# "$arg"; opt_port=$1; shift ;;
     --uid) need $# "$arg"; opt_uid=$1; shift ;;
     --projects) need $# "$arg"; opt_projects=$1; shift ;;
+    --root-helper) opt_root_helper=1 ;;
+    --no-root-helper) opt_root_helper=0 ;;
+    --browser-libs) opt_browser_libs=1 ;;
+    --no-browser-libs) opt_browser_libs=0 ;;
     --no-systemd) systemd=0 ;;
     -h | --help)
       usage
@@ -106,7 +137,7 @@ export HOME
 
 # Choices of the last run. Options and environment variables win over them.
 saved_from='' saved_version='' saved_repo='' saved_repo_url='' saved_ref=''
-saved_source_dir='' saved_port='' saved_projects=''
+saved_source_dir='' saved_port='' saved_projects='' saved_root_helper='' saved_browser_libs=''
 if [ -f "$ETC/setup.conf" ]; then
   # shellcheck source=/dev/null
   . "$ETC/setup.conf"
@@ -126,10 +157,14 @@ PORT_SET=${opt_port:-${CONCLAVE_PORT:-$saved_port}}
 PORT=${PORT_SET:-7717}
 PROJECTS_SET=${opt_projects:-${CONCLAVE_PROJECTS:-$saved_projects}}
 WANT_UID=${opt_uid:-${CONCLAVE_UID:-1000}}
+ROOT_HELPER=${opt_root_helper:-${CONCLAVE_ROOT_HELPER:-$saved_root_helper}}
+BROWSER_LIBS=${opt_browser_libs:-${CONCLAVE_BROWSER_LIBS:-$saved_browser_libs}}
 
 case $FROM in auto | release | git) ;; *) die "--from takes auto, release or git, not $FROM" ;; esac
 case $PORT in '' | *[!0-9]*) die "--port takes a number, not $PORT" ;; esac
 case $WANT_UID in '' | *[!0-9]*) die "--uid takes a number, not $WANT_UID" ;; esac
+case $ROOT_HELPER in '' | 0 | 1) ;; *) die "CONCLAVE_ROOT_HELPER takes 1 or 0, not $ROOT_HELPER" ;; esac
+case $BROWSER_LIBS in '' | 0 | 1) ;; *) die "CONCLAVE_BROWSER_LIBS takes 1 or 0, not $BROWSER_LIBS" ;; esac
 
 # The system.
 [ -r /etc/os-release ] || die "cannot read /etc/os-release"
@@ -171,6 +206,14 @@ trap 'rm -rf "$tmp"' EXIT
 trap 'exit 1' INT TERM
 
 say "Conclave setup on $os_name"
+
+# Asked on the first run; later runs keep the answers (setup.conf).
+if [ -z "$ROOT_HELPER" ]; then
+  if ask "Install the root helper, so the hub can add the system packages it needs (such as the browser's libraries) by itself?" y; then ROOT_HELPER=1; else ROOT_HELPER=0; fi
+fi
+if [ -z "$BROWSER_LIBS" ]; then
+  if ask "Install the browser's system libraries and fonts now (about 150 MB)?" n; then BROWSER_LIBS=1; else BROWSER_LIBS=0; fi
+fi
 
 step "Packages"
 missing=''
@@ -354,6 +397,34 @@ fi
 version=$(runuser -u conclave -- "$CODE/bin/conclave" --version 2>/dev/null || echo unknown)
 say "Conclave $version ($installed)"
 
+# The root helper (docs/DESIGN.md, The root helper): one root-owned script
+# with fixed actions, which the conclave user may run with sudo. A run again
+# replaces it with this version's.
+HELPER=/usr/local/libexec/conclave-root-helper
+step "Root helper"
+if [ "$ROOT_HELPER" = 1 ]; then
+  if "$CODE/bin/conclave" system-helper install --user conclave >"$tmp/helper.log" 2>&1; then
+    grep -E '^Wrote ' "$tmp/helper.log" || true
+    say "The hub can add the system packages it needs, such as the browser's libraries, by itself."
+  else
+    cat "$tmp/helper.log" >&2
+    warn "the root helper did not install. The hub works without it; Settings, Browser then shows the commands to run."
+  fi
+elif [ -e "$HELPER" ]; then
+  say "Left as it is: $HELPER. To remove it: conclave system-helper remove"
+else
+  say "Skipped. To add it later, as root here: conclave system-helper install"
+fi
+if [ "$BROWSER_LIBS" = 1 ]; then
+  step "Browser libraries"
+  if "$CODE/bin/conclave" system-helper run browser-deps >"$tmp/libs.log" 2>&1; then
+    tail -n 1 "$tmp/libs.log"
+  else
+    tail -n 20 "$tmp/libs.log" >&2
+    warn "the browser's libraries did not install. Settings, Browser can install them later."
+  fi
+fi
+
 step "Service"
 # The conclave command for root and the conclave user. As root it runs as the
 # conclave user, so whatever it writes stays readable for the hub.
@@ -370,6 +441,8 @@ EOF
   fi
   cat <<'EOF'
 if [ "$(id -u)" = 0 ]; then
+  # system-helper writes root's own files, so it keeps root.
+  case ${1:-} in system-helper) exec /opt/conclave/bin/conclave "$@" ;; esac
   # Stay in this folder when the conclave user may, else go to its home.
   exec runuser -u conclave -- sh -c 'cd "$1" 2>/dev/null || cd; shift; exec "$@"' sh "$PWD" /opt/conclave/bin/conclave "$@"
 fi
@@ -451,6 +524,8 @@ fi
   say "saved_source_dir=$(q "$SOURCE_DIR")"
   say "saved_port=$(q "$PORT_SET")"
   say "saved_projects=$(q "$PROJECTS_SET")"
+  say "saved_root_helper=$(q "$ROOT_HELPER")"
+  say "saved_browser_libs=$(q "$BROWSER_LIBS")"
 } >"$ETC/setup.conf"
 
 if [ "$systemd" = 1 ]; then
@@ -485,6 +560,9 @@ say "  Data      $DATA"
 say "  Home      $HOME_DIR"
 say "  Projects  $PROJECTS"
 say "  Settings  $ETC/env (KEY=value lines, then systemctl restart $UNIT)"
+if [ -e "$HELPER" ]; then
+  say "  Root      $HELPER (the hub may run it with sudo; remove: conclave system-helper remove)"
+fi
 if [ "$systemd" = 0 ]; then
   say ""
   say "Start the hub by hand: conclave serve"

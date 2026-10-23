@@ -74,6 +74,7 @@ has tar || fail "needs tar"
 [ -n "${HOME:-}" ] || fail "HOME is not set"
 
 target=$(detect_target)
+os_name=${target%%-*}
 asset="conclave-$target.tar.gz"
 if [ "$VERSION" = latest ]; then
   base="https://github.com/$REPO/releases/latest/download"
@@ -139,3 +140,10 @@ say "    conclave daemon pair https://your-hub.example <code>"
 say "    conclave daemon install --start"
 say "  With the desktop app, turn on \"Let the hub use this computer\" instead."
 say "  Guide: https://conclave.kaivalyaahir.com"
+if [ "$os_name" = linux ] && [ "$(id -u)" = 0 ]; then
+  cmd=conclave
+  case ":$PATH:" in *":$BIN_DIR:"*) ;; *) cmd=$BIN_DIR/conclave ;; esac
+  say ""
+  say "Tip: once, as root on this machine, let the hub install the system packages it needs (such as the browser's libraries) by itself:"
+  say "  $cmd system-helper install"
+fi

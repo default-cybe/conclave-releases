@@ -43,6 +43,15 @@ The hub (passed to setup.sh; update keeps the last choices when left out):
   --ref NAME, --port N  See scripts/lxc/setup.sh --help.
   --source-dir DIR      A Conclave checkout on this host: copied into the CT and
                         installed from there (no GitHub access needed).
+  --root-helper, --no-root-helper
+                        CT_ROOT_HELPER=1 or 0. Install the root helper in the
+                        CT, so the hub can add the system packages it needs
+                        (such as the browser's libraries) by itself.
+                        Default: ask, yes.
+  --browser-libs, --no-browser-libs
+                        CT_BROWSER_LIBS=1 or 0. Install the browser's system
+                        libraries and fonts in the CT now, about 150 MB.
+                        Default: ask, no.
 
   --dry-run             Print the commands that change something instead of
                         running them. Queries (next id, templates, storages)
@@ -76,6 +85,20 @@ run() {
   show "$@"
   if [ "$dry" = 0 ]; then "$@"; fi
 }
+# A yes or no question on the terminal; $2 (y or n) is the answer when there
+# is no terminal or the answer is empty.
+ask() {
+  if [ -t 0 ] && [ -t 1 ]; then
+    if [ "$2" = y ]; then printf '%s [Y/n] ' "$1"; else printf '%s [y/N] ' "$1"; fi
+    answer=''
+    read -r answer || true
+    case $answer in
+      [Yy]*) return 0 ;;
+      [Nn]*) return 1 ;;
+    esac
+  fi
+  [ "$2" = y ]
+}
 
 cmd=create
 ctid=''
@@ -88,6 +111,7 @@ o_memory=${CT_MEMORY:-4096} o_swap=${CT_SWAP:-512} o_disk=${CT_DISK:-16}
 o_storage=${CT_STORAGE:-} o_tstorage=${CT_TEMPLATE_STORAGE:-local} o_debian=${CT_DEBIAN:-}
 o_bridge=${CT_BRIDGE:-vmbr0} o_vlan=${CT_VLAN:-} o_ip=${CT_IP:-dhcp} o_gw=${CT_GW:-}
 o_sshkey=${CT_SSH_KEY:-} o_projects=${CT_PROJECTS:-} o_onboot=${CT_ONBOOT:-1}
+o_helper=${CT_ROOT_HELPER:-} o_libs=${CT_BROWSER_LIBS:-}
 
 if [ $# -gt 0 ] && [ "$1" = update ]; then
   cmd=update
@@ -125,6 +149,10 @@ while [ $# -gt 0 ]; do
     --ssh-key) need $# "$arg"; o_sshkey=$1; shift ;;
     --projects) need $# "$arg"; o_projects=$1; shift ;;
     --no-onboot) o_onboot=0 ;;
+    --root-helper) o_helper=1 ;;
+    --no-root-helper) o_helper=0 ;;
+    --browser-libs) o_libs=1 ;;
+    --no-browser-libs) o_libs=0 ;;
     --source-dir) need $# "$arg"; source_dir=$1; shift ;;
     --repo)
       need $# "$arg"
@@ -150,6 +178,8 @@ for n in "$o_cores" "$o_memory" "$o_swap" "$o_disk" ${o_id:+"$o_id"} ${o_vlan:+"
   case $n in '' | *[!0-9]*) die "not a number: $n" ;; esac
 done
 case $o_onboot in 0 | 1) ;; *) die "CT_ONBOOT takes 0 or 1" ;; esac
+case $o_helper in '' | 0 | 1) ;; *) die "CT_ROOT_HELPER takes 1 or 0" ;; esac
+case $o_libs in '' | 0 | 1) ;; *) die "CT_BROWSER_LIBS takes 1 or 0" ;; esac
 case $o_ip in
   dhcp) ;;
   */*) [ -n "$o_gw" ] || warn "a static --ip without --gw gives the CT no default route" ;;
@@ -160,6 +190,19 @@ for t in pct pveam pvesh; do
   has "$t" || die "$t is missing. Run this on a Proxmox VE host."
 done
 if [ "$dry" = 0 ] && [ "$(id -u)" != 0 ]; then die "run this as root on the Proxmox host"; fi
+
+# A new CT asks here, on this terminal (setup.sh in the CT may have none).
+# An update asks nothing: setup.sh keeps the CT's last answers.
+if [ "$cmd" = create ] && [ "$dry" = 0 ]; then
+  if [ -z "$o_helper" ]; then
+    if ask "Install the root helper in the CT, so the hub can add the system packages it needs (such as the browser's libraries) by itself?" y; then o_helper=1; else o_helper=0; fi
+  fi
+  if [ -z "$o_libs" ]; then
+    if ask "Install the browser's system libraries and fonts in the CT now (about 150 MB)?" n; then o_libs=1; else o_libs=0; fi
+  fi
+fi
+case $o_helper in 1) setup_args="$setup_args --root-helper" ;; 0) setup_args="$setup_args --no-root-helper" ;; esac
+case $o_libs in 1) setup_args="$setup_args --browser-libs" ;; 0) setup_args="$setup_args --no-browser-libs" ;; esac
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -292,6 +335,12 @@ if [ "$dry" = 1 ]; then
   exit 0
 fi
 say "CT $o_id ($o_hostname) runs the Conclave hub."
-say "  Shell in the CT   pct enter $o_id"
+say "  Shell in the CT   pct enter $o_id   (or the CT's Console in the Proxmox web UI)"
 say "  First run         pct exec $o_id -- conclave remote"
 say "  Update later      sh $0 update $o_id"
+if [ "$o_helper" = 1 ]; then
+  say "  Root helper       in the CT: the hub adds the system packages it needs by itself"
+else
+  say "  Root helper       not installed. Later, from this shell: pct exec $o_id -- conclave system-helper install"
+fi
+say "Commands for the hub run inside the CT, not on this host: pct exec $o_id -- <command>."
