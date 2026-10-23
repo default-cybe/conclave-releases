@@ -1,19 +1,19 @@
 #!/bin/sh
 # Conclave installer for Linux and macOS.
 #
-#   curl -fsSL https://github.com/default-cybe/conclave-releases/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/default-cybe/conclave/releases/latest/download/install.sh | sh
 #
 # Downloads the release for this OS and CPU, checks its SHA256, installs it to
 # ~/.local/share/conclave and links ~/.local/bin/conclave. Run it again to update.
 #
 # Settings (environment variables):
-#   REPO                  GitHub repo to install from (default default-cybe/conclave-releases)
+#   REPO                  GitHub repo to install from (default default-cybe/conclave)
 #   CONCLAVE_VERSION      release tag such as v0.2.0 (default: latest)
 #   CONCLAVE_INSTALL_DIR  default ~/.local/share/conclave
 #   CONCLAVE_BIN_DIR      default ~/.local/bin
 set -eu
 
-REPO="${REPO:-default-cybe/conclave-releases}"
+REPO="${REPO:-default-cybe/conclave}"
 VERSION="${CONCLAVE_VERSION:-latest}"
 INSTALL_DIR="${CONCLAVE_INSTALL_DIR:-$HOME/.local/share/conclave}"
 BIN_DIR="${CONCLAVE_BIN_DIR:-$HOME/.local/bin}"
@@ -139,7 +139,7 @@ say "  On a PC or Mac without the desktop app, with a device code from the hub's
 say "    conclave daemon pair https://your-hub.example <code>"
 say "    conclave daemon install --start"
 say "  With the desktop app, turn on \"Let the hub use this computer\" instead."
-say "  Guide: https://conclave.kaivalyaahir.com"
+say "  Guide: https://conclave.dymnitguys.com"
 if [ "$os_name" = linux ] && [ "$(id -u)" = 0 ]; then
   cmd=conclave
   case ":$PATH:" in *":$BIN_DIR:"*) ;; *) cmd=$BIN_DIR/conclave ;; esac

@@ -2,9 +2,9 @@
 
 Your own hub for AI agents. Chat and code with any model, from any device. Your chats, code and keys stay on your hardware.
 
-Website and full guide: https://conclave.kaivalyaahir.com
+Website and full guide: https://conclave.dymnitguys.com
 
-This repo holds the installers. Each release lists its files under [Releases](https://github.com/default-cybe/conclave-releases/releases/latest).
+Releases now live in [default-cybe/conclave](https://github.com/default-cybe/conclave/releases/latest). This repo (conclave-releases) only keeps copies for installs made before 0.4.16, which still look for updates here. It will be archived once those have moved.
 
 ## 1. Run the hub
 
@@ -13,7 +13,7 @@ The hub is the part that runs all the time, on a server, a mini PC, a NAS or a P
 **Docker**
 
 ```sh
-curl -fsSLO https://github.com/default-cybe/conclave-releases/releases/latest/download/docker-compose.yml
+curl -fsSLO https://github.com/default-cybe/conclave/releases/latest/download/docker-compose.yml
 docker compose up -d
 ```
 
@@ -22,14 +22,14 @@ Then open http://localhost:7717 on that machine.
 **Proxmox (LXC container)**, on the Proxmox host:
 
 ```sh
-curl -fsSLO https://github.com/default-cybe/conclave-releases/releases/latest/download/conclave-lxc.sh
+curl -fsSLO https://github.com/default-cybe/conclave/releases/latest/download/conclave-lxc.sh
 sh conclave-lxc.sh
 ```
 
 **Linux or macOS**, without Docker:
 
 ```sh
-curl -fsSL https://github.com/default-cybe/conclave-releases/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/default-cybe/conclave/releases/latest/download/install.sh | sh
 ```
 
 ## 2. Install the apps

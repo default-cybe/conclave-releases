@@ -34,7 +34,7 @@ Options (each can also be set as the environment variable after it):
                            source with git.
   --version TAG            CONCLAVE_VERSION. Release tag such as v0.2.0
                            (default: latest).
-  --repo OWNER/NAME        REPO. GitHub repo (default: default-cybe/conclave-releases).
+  --repo OWNER/NAME        REPO. GitHub repo (default: default-cybe/conclave).
   --repo-url URL           CONCLAVE_REPO_URL. Git URL to clone
                            (default: https://github.com/<repo>.git).
   --ref NAME               CONCLAVE_REF. Branch or tag to clone (default: main).
@@ -149,7 +149,7 @@ SOURCE_DIR=${opt_source_dir:-${CONCLAVE_SOURCE_DIR:-}}
 # A new --from drops a saved source folder; otherwise it stays in use.
 if [ -z "$SOURCE_DIR" ] && [ -z "$from_given" ]; then SOURCE_DIR=$saved_source_dir; fi
 VERSION=${opt_version:-${CONCLAVE_VERSION:-${saved_version:-latest}}}
-REPO=${opt_repo:-${REPO:-${saved_repo:-default-cybe/conclave-releases}}}
+REPO=${opt_repo:-${REPO:-${saved_repo:-default-cybe/conclave}}}
 REPO_URL_SET=${opt_repo_url:-${CONCLAVE_REPO_URL:-$saved_repo_url}}
 REPO_URL=${REPO_URL_SET:-https://github.com/$REPO.git}
 REF=${opt_ref:-${CONCLAVE_REF:-${saved_ref:-main}}}
@@ -339,9 +339,10 @@ if [ "$mode" = release ]; then
     fi
   done
   if [ -z "$installer" ]; then
-    ref=main
-    if [ "$VERSION" != latest ]; then ref=$VERSION; fi
-    fetch "https://raw.githubusercontent.com/$REPO/$ref/scripts/install.sh" "$tmp/install.sh" || die "could not download install.sh from $REPO ($ref)"
+    # the copy attached to the release, never main's unreleased one
+    ref=latest/download
+    if [ "$VERSION" != latest ]; then ref=download/$VERSION; fi
+    fetch "https://github.com/$REPO/releases/$ref/install.sh" "$tmp/install.sh" || die "could not download install.sh from $REPO ($ref)"
     installer=$tmp/install.sh
   fi
   if ! HOME=/root REPO="$REPO" CONCLAVE_VERSION="$VERSION" CONCLAVE_INSTALL_DIR="$CODE/release" CONCLAVE_BIN_DIR="$CODE/bin" \

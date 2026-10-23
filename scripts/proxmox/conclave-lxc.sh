@@ -105,7 +105,7 @@ ctid=''
 dry=0
 setup_args=''
 source_dir=${CONCLAVE_SOURCE_DIR:-}
-repo=${REPO:-default-cybe/conclave-releases}
+repo=${REPO:-default-cybe/conclave}
 o_id=${CT_ID:-} o_hostname=${CT_HOSTNAME:-conclave} o_cores=${CT_CORES:-2}
 o_memory=${CT_MEMORY:-4096} o_swap=${CT_SWAP:-512} o_disk=${CT_DISK:-16}
 o_storage=${CT_STORAGE:-} o_tstorage=${CT_TEMPLATE_STORAGE:-local} o_debian=${CT_DEBIAN:-}
@@ -215,8 +215,9 @@ install_sh=$scripts/install.sh
 if [ ! -f "$setup_sh" ] || [ ! -f "$install_sh" ]; then
   setup_sh=$tmp/setup.sh
   install_sh=$tmp/install.sh
-  run curl -fsSL -o "$setup_sh" "https://raw.githubusercontent.com/$repo/main/scripts/lxc/setup.sh"
-  run curl -fsSL -o "$install_sh" "https://raw.githubusercontent.com/$repo/main/scripts/install.sh"
+  # the copies attached to the latest release, never main's unreleased ones
+  run curl -fsSL -o "$setup_sh" "https://github.com/$repo/releases/latest/download/setup.sh"
+  run curl -fsSL -o "$install_sh" "https://github.com/$repo/releases/latest/download/install.sh"
 fi
 if [ -n "$source_dir" ]; then
   [ -f "$source_dir/packages/cli/src/index.ts" ] || die "$source_dir is not a Conclave checkout"
